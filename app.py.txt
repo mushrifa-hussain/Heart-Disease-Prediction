@@ -1,0 +1,82 @@
+# app.py
+import streamlit as st
+import pandas as pd
+import joblib
+import numpy as np
+
+# ---- Load artifacts ----
+model = joblib.load("heart_rf_model.pkl")
+scaler = joblib.load("heart_scaler.pkl")
+X_columns = joblib.load("X_columns.pkl")   # a pandas Index saved during training
+
+st.title("❤️ Heart Disease Prediction App")
+
+# --- User inputs (use the same category labels you used during training) ---
+age = st.number_input("Age", 1, 120, 50)
+sex = st.selectbox("Sex", ["female", "male"])   # we'll convert to numeric below
+cp = st.selectbox("Chest Pain Type", ["typical angina", "atypical angina", "non-anginal", "asymptomatic"])
+trestbps = st.number_input("Resting Blood Pressure", 50, 250, 120)
+chol = st.number_input("Serum Cholesterol (mg/dl)", 50, 700, 200)
+fbs = st.selectbox("Fasting Blood Sugar > 120 mg/dl", [0, 1])
+restecg = st.selectbox("Resting ECG Results", [0, 1, 2])
+thalach = st.number_input("Maximum Heart Rate Achieved", 30, 300, 150)
+exang = st.selectbox("Exercise Induced Angina", [0, 1])
+oldpeak = st.number_input("ST Depression (oldpeak)", 0.0, 10.0, step=0.1, value=1.0)
+slope = st.selectbox("Slope of the peak exercise ST segment", [0, 1, 2])
+ca = st.selectbox("Number of major vessels (0–3)", [0, 1, 2, 3])
+thal = st.selectbox("Thalassemia", ["normal", "fixed defect", "reversible defect"])
+
+# --- Build input dataframe in same logical form as training data ---
+input_dict = {
+    "age": age,
+    "trestbps": trestbps,
+    "chol": chol,
+    "fbs": fbs,
+    "restecg": restecg,
+    "thalach": thalach,
+    "exang": exang,
+    "oldpeak": oldpeak,
+    "slope": slope,
+    "ca": ca
+}
+# create df
+input_df = pd.DataFrame([input_dict])
+
+# sex: if your training used numeric sex column (0/1), set it the same way
+input_df["sex"] = 1 if sex == "male" else 0
+
+# Add categorical columns as raw values so get_dummies creates same columns
+input_df["cp"] = cp
+input_df["thal"] = thal
+
+# One-hot encode everything that was categorical during training
+input_encoded = pd.get_dummies(input_df)
+
+# Reindex to the SAME columns your model was trained on (fills missing cols with 0)
+input_aligned = input_encoded.reindex(columns=list(X_columns), fill_value=0)
+
+# ---- Scale using the saved scaler (must have been fit on training columns) ----
+# scaler expects the same feature names/order; reindex ensures that
+input_scaled = scaler.transform(input_aligned)
+
+# ---- Predict ----
+if st.button("Predict"):
+    pred = model.predict(input_scaled)[0]
+    prob = None
+    # if your model supports predict_proba:
+    try:
+        prob = model.predict_proba(input_scaled)[0,1]
+    except:
+        prob = None
+
+    if pred == 1:
+        st.error("⚠️ Model prediction: High risk of Heart Disease")
+    else:
+        st.success("✅ Model prediction: Low risk of Heart Disease")
+
+    if prob is not None:
+        st.write(f"Predicted probability (heart disease): {prob:.2f}")
+
+# --- debug/inspection (optional) ---
+if st.checkbox("Show aligned input (debug)"):
+    st.write(input_aligned)
